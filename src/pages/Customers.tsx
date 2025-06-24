@@ -24,14 +24,19 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   Visibility as ViewIcon,
+  LocationOn as LocationIcon,
 } from "@mui/icons-material";
 import { DataGrid, GridColDef, GridRenderCellParams } from "@mui/x-data-grid";
 import api from "../utils/axios";
 import { Customer, CustomerStatus } from "../types/customer";
 import { useDebounce } from "../hooks/useDebounce";
+import { useErrorHandler } from "../hooks/useErrorHandler";
+import ErrorAlert from "../components/ErrorAlert";
+import GoogleMapPicker from "../components/GoogleMapPicker";
 
 const Customers: React.FC = () => {
   const navigate = useNavigate();
+  const { error, handleError, clearError } = useErrorHandler();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -51,6 +56,8 @@ const Customers: React.FC = () => {
     status: CustomerStatus.ACTIVE,
     vacationStartDate: "",
     vacationEndDate: "",
+    latitude: 0,
+    longitude: 0,
   });
 
   const fetchCustomers = useCallback(async () => {
@@ -58,11 +65,11 @@ const Customers: React.FC = () => {
       const response = await api.get<Customer[]>("/customers");
       setCustomers(response.data);
     } catch (error) {
-      console.error("Error fetching customers:", error);
+      handleError(error, "Failed to fetch customers");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [handleError]);
 
   useEffect(() => {
     fetchCustomers();
@@ -83,6 +90,8 @@ const Customers: React.FC = () => {
         status: customer.status,
         vacationStartDate: customer.vacationStartDate || "",
         vacationEndDate: customer.vacationEndDate || "",
+        latitude: customer.latitude || 0,
+        longitude: customer.longitude || 0,
       });
     } else {
       setSelectedCustomer(null);
@@ -98,6 +107,8 @@ const Customers: React.FC = () => {
         status: CustomerStatus.ACTIVE,
         vacationStartDate: "",
         vacationEndDate: "",
+        latitude: 0,
+        longitude: 0,
       });
     }
     setOpenDialog(true);
@@ -106,7 +117,8 @@ const Customers: React.FC = () => {
   const handleCloseDialog = useCallback(() => {
     setOpenDialog(false);
     setSelectedCustomer(null);
-  }, []);
+    clearError(); // Clear any errors when closing dialog
+  }, [clearError]);
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -136,9 +148,15 @@ const Customers: React.FC = () => {
       fetchCustomers();
       handleCloseDialog();
     } catch (error) {
-      console.error("Error saving customer:", error);
+      handleError(error, "Failed to save customer");
     }
-  }, [selectedCustomer, formData, fetchCustomers, handleCloseDialog]);
+  }, [
+    selectedCustomer,
+    formData,
+    fetchCustomers,
+    handleCloseDialog,
+    handleError,
+  ]);
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -147,11 +165,11 @@ const Customers: React.FC = () => {
           await api.delete(`/customers/${id}`);
           fetchCustomers();
         } catch (error) {
-          console.error("Error deleting customer:", error);
+          handleError(error, "Failed to delete customer");
         }
       }
     },
-    [fetchCustomers]
+    [fetchCustomers, handleError]
   );
 
   const handleViewDetails = useCallback(
@@ -244,6 +262,8 @@ const Customers: React.FC = () => {
 
   return (
     <Box sx={{ height: "100%", width: "100%" }}>
+      <ErrorAlert error={error} onClose={clearError} />
+
       <Box sx={{ display: "flex", justifyContent: "space-between", mb: 2 }}>
         <Typography variant="h5" component="h1">
           Customers
@@ -300,115 +320,181 @@ const Customers: React.FC = () => {
           {selectedCustomer ? "Edit Customer" : "Add Customer"}
         </DialogTitle>
         <DialogContent>
-          <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 2,
-              mt: 2,
-            }}
-          >
-            <TextField
-              name="customerNumber"
-              label="Customer Number"
-              value={formData.customerNumber}
-              onChange={handleInputChange}
-              disabled={!!selectedCustomer}
-              required
-              fullWidth
+          {/* Basic Information */}
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              Basic Information
+            </Typography>
+            <Box
+              sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}
+            >
+              <TextField
+                name="customerNumber"
+                label="Customer Number"
+                value={formData.customerNumber}
+                onChange={handleInputChange}
+                disabled={!!selectedCustomer}
+                required
+                fullWidth
+              />
+              <TextField
+                name="name"
+                label="Name"
+                value={formData.name}
+                onChange={handleInputChange}
+                required
+                fullWidth
+              />
+            </Box>
+          </Box>
+
+          {/* Contact Information */}
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              Contact Information
+            </Typography>
+            <Box
+              sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}
+            >
+              <TextField
+                name="mobileNumber"
+                label="Mobile Number"
+                value={formData.mobileNumber}
+                onChange={handleInputChange}
+                fullWidth
+              />
+              <TextField
+                name="email"
+                label="Email"
+                type="email"
+                value={formData.email}
+                onChange={handleInputChange}
+                fullWidth
+              />
+            </Box>
+          </Box>
+
+          {/* Status and Vacation Dates */}
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              Status
+            </Typography>
+            <Box
+              sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}
+            >
+              <FormControl fullWidth>
+                <InputLabel>Status</InputLabel>
+                <Select
+                  name="status"
+                  value={formData.status}
+                  onChange={handleStatusChange}
+                  label="Status"
+                >
+                  <MenuItem value={CustomerStatus.ACTIVE}>Active</MenuItem>
+                  <MenuItem value={CustomerStatus.ON_VACATION}>
+                    On Vacation
+                  </MenuItem>
+                  <MenuItem value={CustomerStatus.INACTIVE}>Inactive</MenuItem>
+                </Select>
+              </FormControl>
+
+              {/* Vacation dates - only show when status is ON_VACATION */}
+              {formData.status === CustomerStatus.ON_VACATION && (
+                <>
+                  <TextField
+                    name="vacationStartDate"
+                    label="Vacation Start Date"
+                    type="date"
+                    value={formData.vacationStartDate}
+                    onChange={handleInputChange}
+                    InputLabelProps={{ shrink: true }}
+                    fullWidth
+                  />
+                  <TextField
+                    name="vacationEndDate"
+                    label="Vacation End Date"
+                    type="date"
+                    value={formData.vacationEndDate}
+                    onChange={handleInputChange}
+                    InputLabelProps={{ shrink: true }}
+                    fullWidth
+                  />
+                </>
+              )}
+            </Box>
+          </Box>
+
+          {/* Address Information - Grouped together */}
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              Address Information
+            </Typography>
+            <Box
+              sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}
+            >
+              <TextField
+                name="street"
+                label="Street"
+                value={formData.street}
+                onChange={handleInputChange}
+                required
+                fullWidth
+              />
+              <TextField
+                name="houseNumber"
+                label="House Number"
+                value={formData.houseNumber}
+                onChange={handleInputChange}
+                required
+                fullWidth
+              />
+              <TextField
+                name="postalCode"
+                label="Postal Code"
+                value={formData.postalCode}
+                onChange={handleInputChange}
+                required
+                fullWidth
+              />
+              <TextField
+                name="city"
+                label="City"
+                value={formData.city}
+                onChange={handleInputChange}
+                required
+                fullWidth
+              />
+            </Box>
+          </Box>
+
+          {/* Location Map */}
+          <Box sx={{ mt: 3 }}>
+            <Typography
+              variant="h6"
+              sx={{ mb: 2, display: "flex", alignItems: "center", gap: 1 }}
+            >
+              <LocationIcon />
+              Location on Map
+            </Typography>
+            <GoogleMapPicker
+              latitude={formData.latitude}
+              longitude={formData.longitude}
+              onLocationChange={(lat, lng) => {
+                setFormData((prev) => ({
+                  ...prev,
+                  latitude: lat,
+                  longitude: lng,
+                }));
+              }}
+              address={[
+                formData.street,
+                formData.houseNumber,
+                formData.postalCode,
+                formData.city,
+              ]
+                .filter(Boolean)
+                .join(", ")}
             />
-            <TextField
-              name="name"
-              label="Name"
-              value={formData.name}
-              onChange={handleInputChange}
-              required
-              fullWidth
-            />
-            <TextField
-              name="street"
-              label="Street"
-              value={formData.street}
-              onChange={handleInputChange}
-              required
-              fullWidth
-            />
-            <TextField
-              name="houseNumber"
-              label="House Number"
-              value={formData.houseNumber}
-              onChange={handleInputChange}
-              required
-              fullWidth
-            />
-            <TextField
-              name="postalCode"
-              label="Postal Code"
-              value={formData.postalCode}
-              onChange={handleInputChange}
-              required
-              fullWidth
-            />
-            <TextField
-              name="city"
-              label="City"
-              value={formData.city}
-              onChange={handleInputChange}
-              required
-              fullWidth
-            />
-            <TextField
-              name="mobileNumber"
-              label="Mobile Number"
-              value={formData.mobileNumber}
-              onChange={handleInputChange}
-              fullWidth
-            />
-            <TextField
-              name="email"
-              label="Email"
-              type="email"
-              value={formData.email}
-              onChange={handleInputChange}
-              fullWidth
-            />
-            <FormControl fullWidth>
-              <InputLabel>Status</InputLabel>
-              <Select
-                name="status"
-                value={formData.status}
-                onChange={handleStatusChange}
-                label="Status"
-              >
-                <MenuItem value={CustomerStatus.ACTIVE}>Active</MenuItem>
-                <MenuItem value={CustomerStatus.ON_VACATION}>
-                  On Vacation
-                </MenuItem>
-                <MenuItem value={CustomerStatus.INACTIVE}>Inactive</MenuItem>
-              </Select>
-            </FormControl>
-            {formData.status === CustomerStatus.ON_VACATION && (
-              <>
-                <TextField
-                  name="vacationStartDate"
-                  label="Vacation Start Date"
-                  type="date"
-                  value={formData.vacationStartDate}
-                  onChange={handleInputChange}
-                  InputLabelProps={{ shrink: true }}
-                  fullWidth
-                />
-                <TextField
-                  name="vacationEndDate"
-                  label="Vacation End Date"
-                  type="date"
-                  value={formData.vacationEndDate}
-                  onChange={handleInputChange}
-                  InputLabelProps={{ shrink: true }}
-                  fullWidth
-                />
-              </>
-            )}
           </Box>
         </DialogContent>
         <DialogActions>

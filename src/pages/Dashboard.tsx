@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
   Paper,
@@ -23,16 +23,16 @@ const Dashboard: React.FC = () => {
     fetchDashboardStats();
   }, []);
 
-  const fetchDashboardStats = async () => {
+  const fetchDashboardStats = useCallback(async () => {
     try {
-      // const response = await api.get<DashboardStats>("/dashboard/stats");
-      // setStats(response.data);
+      const response = await api.get<DashboardStats>("/dashboard/stats");
+      setStats(response.data);
     } catch (error) {
-      console.error("Error fetching dashboard stats:", error);
+      // Error will be automatically shown by axios interceptor
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   if (loading) {
     return (

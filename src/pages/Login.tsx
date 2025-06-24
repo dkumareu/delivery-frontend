@@ -7,20 +7,21 @@ import {
   TextField,
   Typography,
   Paper,
-  Alert,
   CircularProgress,
 } from "@mui/material";
 import { useAuth } from "../context/AuthContext";
+import { useErrorHandler } from "../hooks/useErrorHandler";
+import ErrorAlert from "../components/ErrorAlert";
 import api from "../utils/axios";
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
   const { login, isAuthenticated, loading } = useAuth();
+  const { error, handleError, clearError } = useErrorHandler();
   const [formData, setFormData] = useState({
     email: "",
     password: "",
   });
-  const [error, setError] = useState("");
   const [formLoading, setFormLoading] = useState(false);
 
   // Redirect if already authenticated
@@ -57,14 +58,14 @@ const Login: React.FC = () => {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setError("");
+    clearError();
     setFormLoading(true);
 
     try {
       await login(formData.email, formData.password);
       navigate("/");
     } catch (error) {
-      setError("Invalid email or password");
+      handleError(error, "Invalid email or password");
     } finally {
       setFormLoading(false);
     }
@@ -92,11 +93,7 @@ const Login: React.FC = () => {
           Login
         </Typography>
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
+        <ErrorAlert error={error} onClose={clearError} />
 
         <form onSubmit={handleSubmit}>
           <TextField

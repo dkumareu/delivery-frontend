@@ -74,11 +74,10 @@ const Drivers: React.FC = () => {
 
   const fetchDrivers = useCallback(async () => {
     try {
-      setLoading(true);
       const response = await api.get<Driver[]>("/drivers");
       setDrivers(response.data);
     } catch (error) {
-      console.error("Error fetching drivers:", error);
+      // Error will be automatically shown by axios interceptor
     } finally {
       setLoading(false);
     }
@@ -158,7 +157,7 @@ const Drivers: React.FC = () => {
       fetchDrivers();
       handleCloseDialog();
     } catch (error) {
-      console.error("Error saving driver:", error);
+      // Error will be automatically shown by axios interceptor
     }
   }, [selectedDriver, formData, fetchDrivers, handleCloseDialog]);
 
@@ -169,7 +168,7 @@ const Drivers: React.FC = () => {
           await api.delete(`/drivers/${id}`);
           fetchDrivers();
         } catch (error) {
-          console.error("Error deleting driver:", error);
+          // Error will be automatically shown by axios interceptor
         }
       }
     },

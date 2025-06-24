@@ -27,6 +27,7 @@ import {
   Logout as LogoutIcon,
   DirectionsCar as DriverIcon,
   Assignment as AssignmentIcon,
+  Route as RouteIcon,
 } from "@mui/icons-material";
 import { useAuth } from "../context/AuthContext";
 
@@ -52,10 +53,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { text: "Dashboard", icon: <DashboardIcon />, path: "/" },
     { text: "Customers", icon: <PeopleIcon />, path: "/customers" },
     { text: "Drivers", icon: <DriverIcon />, path: "/drivers" },
-    { text: "Assign Driver", icon: <AssignmentIcon />, path: "/assign-driver" },
     { text: "Items", icon: <InventoryIcon />, path: "/items" },
     { text: "Orders", icon: <ShoppingCartIcon />, path: "/orders" },
+    { text: "Assign Driver", icon: <AssignmentIcon />, path: "/assign-driver" },
     { text: "Planning", icon: <CalendarIcon />, path: "/planning" },
+    { text: "Delivery Routes", icon: <RouteIcon />, path: "/delivery-routes" },
   ];
 
   const drawer = (

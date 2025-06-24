@@ -23,6 +23,7 @@ import OrderDetails from "./pages/OrderDetails";
 import PlanningBoard from "./pages/PlanningBoard";
 import Drivers from "./pages/Drivers";
 import AssignDriver from "./pages/AssignDriver";
+import DeliveryRoutes from "./pages/DeliveryRoutes";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({
@@ -148,6 +149,16 @@ const App: React.FC = () => {
                 <PrivateRoute>
                   <Layout>
                     <AssignDriver />
+                  </Layout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/delivery-routes"
+              element={
+                <PrivateRoute>
+                  <Layout>
+                    <DeliveryRoutes />
                   </Layout>
                 </PrivateRoute>
               }

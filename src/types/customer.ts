@@ -17,6 +17,8 @@ export interface Customer {
   status: CustomerStatus;
   vacationStartDate: string | null;
   vacationEndDate: string | null;
+  latitude?: number;
+  longitude?: number;
   createdAt: string;
   updatedAt: string;
 }

@@ -82,14 +82,10 @@ const AssignDriver: React.FC = () => {
         api.get<Order[]>("/orders/unassigned"),
         api.get<Driver[]>("/drivers"),
       ]);
-      console.log("API Response:", driversRes);
-      console.log("Drivers data:", driversRes.data);
-      console.log("Number of drivers:", driversRes.data.length);
       setUnassignedOrders(ordersRes.data);
       setDrivers(driversRes.data);
     } catch (error) {
-      console.error("Error details:", error);
-      showSnackbar("Error fetching data", "error");
+      // Error will be automatically shown by axios interceptor
     } finally {
       setLoading(false);
     }
@@ -130,8 +126,7 @@ const AssignDriver: React.FC = () => {
       setSelectedOrders([]);
       fetchData();
     } catch (error) {
-      showSnackbar("Error assigning orders", "error");
-      console.error("Error assigning orders:", error);
+      // Error will be automatically shown by axios interceptor
     }
   };
 
@@ -172,19 +167,31 @@ const AssignDriver: React.FC = () => {
                 variant="outlined"
               />
             )}
-            renderOption={(props, option) => (
-              <li {...props}>
-                <div>
-                  <strong>{option.name}</strong>
-                  <br />
-                  <small>Driver #{option.driverNumber}</small>
-                  {option.email && <br />}
-                  {option.email && <small>{option.email}</small>}
-                  {option.mobileNumber && <br />}
-                  {option.mobileNumber && <small>{option.mobileNumber}</small>}
-                </div>
-              </li>
-            )}
+            renderOption={(props, option) => {
+              const { key, ...otherProps } = props;
+              return (
+                <li key={key} {...otherProps}>
+                  <Box>
+                    <Typography variant="body1" fontWeight="bold">
+                      {option.name}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Driver #{option.driverNumber}
+                    </Typography>
+                    {option.email && (
+                      <Typography variant="body2" color="text.secondary">
+                        {option.email}
+                      </Typography>
+                    )}
+                    {option.mobileNumber && (
+                      <Typography variant="body2" color="text.secondary">
+                        {option.mobileNumber}
+                      </Typography>
+                    )}
+                  </Box>
+                </li>
+              );
+            }}
             loading={loading}
             loadingText="Loading drivers..."
             noOptionsText="No drivers found"
@@ -237,7 +244,7 @@ const AssignDriver: React.FC = () => {
                 >
                   <ListItemText
                     primary={
-                      <Box>
+                      <>
                         <Typography variant="subtitle1" fontWeight="bold">
                           Order #{order.orderNumber}
                         </Typography>
@@ -268,31 +275,47 @@ const AssignDriver: React.FC = () => {
                             </>
                           )}
                         </Typography>
-                      </Box>
+                      </>
                     }
                     secondary={
-                      <Box mt={1}>
-                        <Typography variant="body2" component="div">
+                      <>
+                        <Typography
+                          variant="body2"
+                          component="span"
+                          display="block"
+                        >
                           <strong>Address:</strong> {order.customer.street}{" "}
                           {order.customer.houseNumber},{" "}
                           {order.customer.postalCode} {order.customer.city}
                         </Typography>
-                        <Typography variant="body2" component="div">
+                        <Typography
+                          variant="body2"
+                          component="span"
+                          display="block"
+                        >
                           <strong>Customer #:</strong>{" "}
                           {order.customer.customerNumber}
                         </Typography>
                         {order.customer.email && (
-                          <Typography variant="body2" component="div">
+                          <Typography
+                            variant="body2"
+                            component="span"
+                            display="block"
+                          >
                             <strong>Email:</strong> {order.customer.email}
                           </Typography>
                         )}
                         {order.customer.mobileNumber && (
-                          <Typography variant="body2" component="div">
+                          <Typography
+                            variant="body2"
+                            component="span"
+                            display="block"
+                          >
                             <strong>Phone:</strong>{" "}
                             {order.customer.mobileNumber}
                           </Typography>
                         )}
-                      </Box>
+                      </>
                     }
                   />
                 </ListItem>

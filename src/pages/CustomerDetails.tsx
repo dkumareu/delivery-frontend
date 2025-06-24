@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
   Paper,
@@ -65,27 +65,25 @@ const CustomerDetails: React.FC = () => {
     fetchCustomerOrders();
   }, [id]);
 
-  const fetchCustomer = async () => {
+  const fetchCustomer = useCallback(async () => {
     try {
       const response = await api.get<Customer>(`/customers/${id}`);
       setCustomer(response.data);
     } catch (error) {
-      console.error("Error fetching customer:", error);
+      // Error will be automatically shown by axios interceptor
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
-  const fetchCustomerOrders = async () => {
+  const fetchCustomerOrders = useCallback(async () => {
     try {
-      const response = await api.get<Order[]>(`/customers/${id}/orders`);
+      const response = await api.get<Order[]>(`/orders?customer=${id}`);
       setOrders(response.data);
     } catch (error) {
-      console.error("Error fetching customer orders:", error);
-    } finally {
-      setOrdersLoading(false);
+      // Error will be automatically shown by axios interceptor
     }
-  };
+  }, [id]);
 
   if (loading) {
     return (
@@ -193,6 +191,18 @@ const CustomerDetails: React.FC = () => {
                   size="small"
                 />
               </Box>
+
+              {(customer.latitude || customer.longitude) && (
+                <>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Location Coordinates
+                  </Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {customer.latitude?.toFixed(6)},{" "}
+                    {customer.longitude?.toFixed(6)}
+                  </Typography>
+                </>
+              )}
             </Box>
 
             <Box>

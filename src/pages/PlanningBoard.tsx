@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
   Paper,
@@ -66,7 +66,7 @@ const PlanningBoard: React.FC = () => {
     fetchOrders();
   }, [selectedDate]);
 
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     try {
       setLoading(true);
       const response = await api.get<Order[]>("/orders", {
@@ -77,20 +77,20 @@ const PlanningBoard: React.FC = () => {
       });
       setOrders(response.data);
     } catch (error) {
-      console.error("Error fetching orders:", error);
+      // Error will be automatically shown by axios interceptor
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedDate]);
 
-  const fetchDrivers = async () => {
+  const fetchDrivers = useCallback(async () => {
     try {
       const response = await api.get<Driver[]>("/drivers");
       setDrivers(response.data);
     } catch (error) {
-      console.error("Error fetching drivers:", error);
+      // Error will be automatically shown by axios interceptor
     }
-  };
+  }, []);
 
   const handleDateChange = (date: Date | null) => {
     if (date) {
@@ -98,11 +98,17 @@ const PlanningBoard: React.FC = () => {
     }
   };
 
-  const handleAssignDriver = (order: Order) => {
-    setSelectedOrder(order);
-    setSelectedDriver(order.assignedDriver || null);
-    setOpenDialog(true);
-  };
+  const handleAssignDriver = useCallback(
+    async (orderId: string, driverId: string) => {
+      try {
+        await api.patch(`/orders/${orderId}`, { driver: driverId });
+        fetchOrders();
+      } catch (error) {
+        // Error will be automatically shown by axios interceptor
+      }
+    },
+    [fetchOrders]
+  );
 
   const handleDriverChange = (
     _event: React.SyntheticEvent,
@@ -115,15 +121,15 @@ const PlanningBoard: React.FC = () => {
     if (!selectedOrder || !selectedDriver) return;
 
     try {
-      await api.post("/orders/assign-driver", {
-        driverId: selectedDriver._id,
-        orderIds: [selectedOrder._id],
+      await api.patch(`/orders/${selectedOrder._id}`, {
+        assignedDriver: selectedDriver._id,
       });
       fetchOrders();
       setOpenDialog(false);
       setSelectedDriver(null);
+      setSelectedOrder(null);
     } catch (error) {
-      console.error("Error assigning driver:", error);
+      // Error will be automatically shown by axios interceptor
     }
   };
 
@@ -198,7 +204,10 @@ const PlanningBoard: React.FC = () => {
                 {!order.assignedDriver && (
                   <Button
                     variant="outlined"
-                    onClick={() => handleAssignDriver(order)}
+                    onClick={() => {
+                      setSelectedOrder(order);
+                      setOpenDialog(true);
+                    }}
                   >
                     Assign Driver
                   </Button>
@@ -214,6 +223,7 @@ const PlanningBoard: React.FC = () => {
         onClose={() => {
           setOpenDialog(false);
           setSelectedDriver(null);
+          setSelectedOrder(null);
         }}
         maxWidth="sm"
         fullWidth
@@ -221,6 +231,10 @@ const PlanningBoard: React.FC = () => {
         <DialogTitle>Assign Driver</DialogTitle>
         <DialogContent>
           <Box sx={{ mt: 2, minWidth: 400 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Assigning driver to Order #{selectedOrder?.orderNumber} -{" "}
+              {selectedOrder?.customer.name}
+            </Typography>
             <Autocomplete
               id="driver-select"
               options={drivers}
@@ -279,6 +293,7 @@ const PlanningBoard: React.FC = () => {
             onClick={() => {
               setOpenDialog(false);
               setSelectedDriver(null);
+              setSelectedOrder(null);
             }}
           >
             Cancel

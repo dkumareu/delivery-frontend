@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   Box,
@@ -112,22 +112,21 @@ const OrderDetails: React.FC = () => {
   const [error, setError] = useState("");
   const [customerId, setCustomerId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchOrder = async () => {
-      try {
-        const response = await api.get<Order>(`/orders/${id}`);
-        setOrder(response.data);
-        setCustomerId(response.data.customer._id);
-      } catch (error) {
-        console.error("Error fetching order:", error);
-        setError("Failed to fetch order details");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchOrder();
+  const fetchOrder = useCallback(async () => {
+    try {
+      const response = await api.get<Order>(`/orders/${id}`);
+      setOrder(response.data);
+      setCustomerId(response.data.customer._id);
+    } catch (error) {
+      // Error will be automatically shown by axios interceptor
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
+
+  useEffect(() => {
+    fetchOrder();
+  }, [fetchOrder]);
 
   const handleBack = () => {
     if (customerId && location.state?.from === "customer") {

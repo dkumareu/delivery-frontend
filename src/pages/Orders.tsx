@@ -52,36 +52,34 @@ const Orders: React.FC = () => {
     fetchItems();
   }, []);
 
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     try {
-      setLoading(true);
       const response = await api.get<Order[]>("/orders");
       setOrders(response.data);
     } catch (error) {
-      console.error("Error fetching orders:", error);
-      setOrders([]); // Set empty array on error
+      // Error will be automatically shown by axios interceptor
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const fetchCustomers = async () => {
+  const fetchCustomers = useCallback(async () => {
     try {
       const response = await api.get<Customer[]>("/customers");
       setCustomers(response.data);
     } catch (error) {
-      console.error("Error fetching customers:", error);
+      // Error will be automatically shown by axios interceptor
     }
-  };
+  }, []);
 
-  const fetchItems = async () => {
+  const fetchItems = useCallback(async () => {
     try {
       const response = await api.get<Item[]>("/items");
       setItems(response.data);
     } catch (error) {
-      console.error("Error fetching items:", error);
+      // Error will be automatically shown by axios interceptor
     }
-  };
+  }, []);
 
   const handleOpenDialog = useCallback((order?: Order) => {
     if (order) {
@@ -97,29 +95,36 @@ const Orders: React.FC = () => {
     setSelectedOrder(null);
   }, []);
 
-  const handleSubmit = async (orderData: any) => {
-    try {
-      if (selectedOrder) {
-        await api.patch(`/orders/${selectedOrder._id}`, orderData);
-      } else {
-        await api.post("/orders", orderData);
-      }
-      fetchOrders();
-    } catch (error) {
-      console.error("Error saving order:", error);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (window.confirm("Are you sure you want to delete this order?")) {
+  const handleSubmit = useCallback(
+    async (orderData: any) => {
       try {
-        await api.delete(`/orders/${id}`);
+        if (selectedOrder) {
+          await api.patch(`/orders/${selectedOrder._id}`, orderData);
+        } else {
+          await api.post("/orders", orderData);
+        }
         fetchOrders();
+        handleCloseDialog();
       } catch (error) {
-        console.error("Error deleting order:", error);
+        // Error will be automatically shown by axios interceptor
       }
-    }
-  };
+    },
+    [selectedOrder, fetchOrders, handleCloseDialog]
+  );
+
+  const handleDelete = useCallback(
+    async (id: string) => {
+      if (window.confirm("Are you sure you want to delete this order?")) {
+        try {
+          await api.delete(`/orders/${id}`);
+          fetchOrders();
+        } catch (error) {
+          // Error will be automatically shown by axios interceptor
+        }
+      }
+    },
+    [fetchOrders]
+  );
 
   const getStatusColor = (status: OrderStatus) => {
     switch (status) {
@@ -247,7 +252,7 @@ const Orders: React.FC = () => {
         },
       },
     ],
-    [handleOpenDialog, navigate]
+    [handleOpenDialog, navigate, handleDelete]
   );
 
   const filteredOrders = useMemo(

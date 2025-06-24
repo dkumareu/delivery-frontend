@@ -25,8 +25,11 @@ import { DataGrid, GridColDef, GridRenderCellParams } from "@mui/x-data-grid";
 import api from "../utils/axios";
 import { Item, UnitOfMeasure } from "../types/item";
 import { useDebounce } from "../hooks/useDebounce";
+import { useErrorHandler } from "../hooks/useErrorHandler";
+import ErrorAlert from "../components/ErrorAlert";
 
 const Items: React.FC = () => {
+  const { error, handleError, clearError } = useErrorHandler();
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
@@ -48,11 +51,11 @@ const Items: React.FC = () => {
       const response = await api.get<Item[]>("/items");
       setItems(response.data);
     } catch (error) {
-      console.error("Error fetching items:", error);
+      handleError(error, "Failed to fetch items");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [handleError]);
 
   useEffect(() => {
     fetchItems();
@@ -86,7 +89,8 @@ const Items: React.FC = () => {
   const handleCloseDialog = useCallback(() => {
     setOpenDialog(false);
     setSelectedItem(null);
-  }, []);
+    clearError(); // Clear any errors when closing dialog
+  }, [clearError]);
 
   const handleSubmit = useCallback(async () => {
     try {
@@ -98,9 +102,9 @@ const Items: React.FC = () => {
       fetchItems();
       handleCloseDialog();
     } catch (error) {
-      console.error("Error saving item:", error);
+      handleError(error, "Failed to save item");
     }
-  }, [selectedItem, formData, fetchItems, handleCloseDialog]);
+  }, [selectedItem, formData, fetchItems, handleCloseDialog, handleError]);
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -109,11 +113,11 @@ const Items: React.FC = () => {
           await api.delete(`/items/${id}`);
           fetchItems();
         } catch (error) {
-          console.error("Error deleting item:", error);
+          handleError(error, "Failed to delete item");
         }
       }
     },
-    [fetchItems]
+    [fetchItems, handleError]
   );
 
   const debouncedSetSearchQuery = useDebounce((value: string) => {
@@ -205,6 +209,8 @@ const Items: React.FC = () => {
 
   return (
     <Box sx={{ height: "100%", width: "100%" }}>
+      <ErrorAlert error={error} onClose={clearError} />
+
       <Box sx={{ display: "flex", justifyContent: "space-between", mb: 2 }}>
         <Typography variant="h5" component="h1">
           Items
