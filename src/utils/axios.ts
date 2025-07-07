@@ -3,7 +3,7 @@ import axios from "axios";
 const liveUrl = "https://delivery.dev-env.co";
 const localUrl = "http://localhost:5000";
 const api = axios.create({
-  baseURL: localUrl + "/api",
+  baseURL: liveUrl + "/api",
 });
 
 // Global error display function
