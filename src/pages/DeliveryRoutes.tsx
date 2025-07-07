@@ -12,6 +12,7 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  Button,
 } from "@mui/material";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
@@ -21,6 +22,7 @@ import {
   Phone as PhoneIcon,
   Email as EmailIcon,
   Home as HomeIcon,
+  Download as DownloadIcon,
 } from "@mui/icons-material";
 import api from "../utils/axios";
 
@@ -29,6 +31,8 @@ interface Driver {
   driverNumber: string;
   name: string;
   status: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 interface Customer {
@@ -55,6 +59,10 @@ interface Order {
   status: string;
   assignedDriver?: Driver;
   deliverySequence?: number;
+  amount?: string;
+  totalGrossAmount?: number;
+  paymentMethod?: string;
+  driverNote?: string;
 }
 
 const DeliveryRoutes: React.FC = () => {
@@ -63,14 +71,41 @@ const DeliveryRoutes: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
+  const [routeLoading, setRouteLoading] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
     null
   );
   const [draggableOrder, setDraggableOrder] = useState<Order[]>([]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [routeInfo, setRouteInfo] = useState<{
+    totalDistance: number;
+    totalDuration: number;
+    legs: Array<{
+      distance: string;
+      duration: string;
+      startAddress: string;
+      endAddress: string;
+    }>;
+  } | null>(null);
 
-  // Base location (Berlin)
-  const baseLocation = { lat: 52.52, lng: 13.405 };
+  // Base location from selected driver
+  const baseLocation = selectedDriver?.latitude && selectedDriver?.longitude 
+    ? { lat: selectedDriver.latitude, lng: selectedDriver.longitude }
+    : { lat: 52.52, lng: 13.405 }; // Fallback to Berlin if no driver location
+
+  // Route colors for different segments
+  const routeColors = [
+    "#FF6B6B",
+    "#4ECDC4", 
+    "#45B7D1",
+    "#96CEB4",
+    "#FFEAA7",
+    "#DDA0DD",
+    "#98D8C8",
+    "#F7DC6F",
+    "#BB8FCE",
+    "#85C1E9",
+  ];
 
   // Fetch drivers
   const fetchDrivers = useCallback(async () => {
@@ -176,6 +211,8 @@ const DeliveryRoutes: React.FC = () => {
     setDraggedIndex(null);
   };
 
+
+
   // Initialize map
   const initializeMap = useCallback(() => {
     if (!window.google || !window.google.maps) return;
@@ -193,7 +230,9 @@ const DeliveryRoutes: React.FC = () => {
     new window.google.maps.Marker({
       position: baseLocation,
       map: map,
-      title: "Base Location (Berlin)",
+      title: selectedDriver 
+        ? `Driver Base: ${selectedDriver.name}`
+        : "Base Location (Berlin)",
       icon: {
         path: window.google.maps.SymbolPath.CIRCLE,
         scale: 15,
@@ -208,21 +247,7 @@ const DeliveryRoutes: React.FC = () => {
     const ordersWithCoords = draggableOrder;
 
     const markers: google.maps.Marker[] = [];
-    const polylines: google.maps.Polyline[] = [];
-
-    // Route colors for different segments
-    const routeColors = [
-      "#FF6B6B",
-      "#4ECDC4",
-      "#45B7D1",
-      "#96CEB4",
-      "#FFEAA7",
-      "#DDA0DD",
-      "#98D8C8",
-      "#F7DC6F",
-      "#BB8FCE",
-      "#85C1E9",
-    ];
+    const directionsRenderers: google.maps.DirectionsRenderer[] = [];
 
     ordersWithCoords.forEach((order, index) => {
       const customer = order.customer;
@@ -252,58 +277,273 @@ const DeliveryRoutes: React.FC = () => {
       markers.push(marker);
     });
 
-    // Draw simple route lines connecting the points
+    // Create optimized road routes using Directions Service
     if (ordersWithCoords.length > 0) {
-      const points = [
-        baseLocation,
-        ...ordersWithCoords.map((order) => ({
-          lat: order.customer.latitude,
-          lng: order.customer.longitude,
-        })),
-        baseLocation,
-      ];
+      setRouteLoading(true);
+      const directionsService = new window.google.maps.DirectionsService();
+      
+      // Create waypoints for the route
+      const waypoints = ordersWithCoords.map((order) => ({
+        location: new window.google.maps.LatLng(
+          order.customer.latitude,
+          order.customer.longitude
+        ),
+        stopover: true,
+      }));
 
-      // Draw route segments
-      for (let i = 0; i < points.length - 1; i++) {
-        const polyline = new window.google.maps.Polyline({
-          path: [points[i], points[i + 1]],
-          geodesic: true,
-          strokeColor: routeColors[i % routeColors.length],
-          strokeOpacity: 1.0,
-          strokeWeight: 4,
-          map: map,
-        });
-        polylines.push(polyline);
-      }
+      // Create directions request
+      const request: google.maps.DirectionsRequest = {
+        origin: baseLocation,
+        destination: baseLocation, // Return to base
+        waypoints: waypoints,
+        optimizeWaypoints: false, // Keep our manual order
+        travelMode: window.google.maps.TravelMode.DRIVING,
+      };
 
-      // Add info windows for route segments
-      polylines.forEach((polyline, index) => {
-        const startPoint = points[index];
-        const endPoint = points[index + 1];
-        const midPoint = {
-          lat: (startPoint.lat + endPoint.lat) / 2,
-          lng: (startPoint.lng + endPoint.lng) / 2,
-        };
+             // Get optimized route
+       directionsService.route(request, (result, status) => {
+         setRouteLoading(false);
+                  if (status === window.google.maps.DirectionsStatus.OK) {
+           // Clear existing renderers
+           directionsRenderers.forEach((renderer) => {
+             renderer.setMap(null);
+           });
+           directionsRenderers.length = 0;
 
-        const infoWindow = new window.google.maps.InfoWindow({
-          content: `<div style="padding: 8px;">
-            <strong>Route Segment ${index + 1}</strong><br>
-            ${
-              index === 0
-                ? "Base → Customer 1"
-                : index === points.length - 2
-                ? "Last Customer → Base"
-                : `Customer ${index} → Customer ${index + 1}`
-            }
-          </div>`,
-        });
+           // Create a custom directions renderer with custom styling
+           const directionsRenderer = new window.google.maps.DirectionsRenderer({
+             suppressMarkers: true, // We'll use our custom markers
+             polylineOptions: {
+               strokeColor: "#4285F4",
+               strokeWeight: 6,
+               strokeOpacity: 0.8,
+             },
+           });
 
-        polyline.addListener("click", () => {
-          infoWindow.setPosition(midPoint);
-          infoWindow.open(map);
-        });
-      });
-    }
+                      // Instead of using the directions renderer, create individual polylines for each leg
+           const route = result?.routes?.[0];
+           if (route) {
+             const totalDistance = route.legs.reduce(
+               (total, leg) => total + (leg.distance?.value || 0),
+               0
+             );
+             const totalDuration = route.legs.reduce(
+               (total, leg) => total + (leg.duration?.value || 0),
+               0
+             );
+
+             // Update route info state
+             setRouteInfo({
+               totalDistance,
+               totalDuration,
+               legs: route.legs.map((leg) => ({
+                 distance: leg.distance?.text || '',
+                 duration: leg.duration?.text || '',
+                 startAddress: leg.start_address || '',
+                 endAddress: leg.end_address || '',
+               })),
+             });
+
+            // Add info window for route summary
+            const routeInfoWindow = new window.google.maps.InfoWindow({
+              content: `<div style="padding: 12px; min-width: 200px;">
+                <h3 style="margin: 0 0 8px 0; color: #4285F4;">Route Summary</h3>
+                <p style="margin: 4px 0;"><strong>Driver:</strong> ${selectedDriver?.name || 'Unknown'}</p>
+                <p style="margin: 4px 0;"><strong>Base Location:</strong> ${selectedDriver?.latitude && selectedDriver?.longitude ? `${selectedDriver.latitude.toFixed(4)}, ${selectedDriver.longitude.toFixed(4)}` : 'Berlin (Default)'}</p>
+                <p style="margin: 4px 0;"><strong>Total Distance:</strong> ${(totalDistance / 1000).toFixed(1)} km</p>
+                <p style="margin: 4px 0;"><strong>Total Duration:</strong> ${Math.round(totalDuration / 60)} minutes</p>
+                <p style="margin: 4px 0;"><strong>Stops:</strong> ${ordersWithCoords.length}</p>
+                <p style="margin: 8px 0 0 0; font-size: 12px; color: #666;">
+                  Route optimized for driving directions
+                </p>
+              </div>`,
+            });
+
+            // Add click listener to base marker to show route info
+            const baseMarker = new window.google.maps.Marker({
+              position: baseLocation,
+              map: map,
+              title: selectedDriver 
+                ? `Driver Base: ${selectedDriver.name} - Click for route info`
+                : "Base Location (Berlin) - Click for route info",
+              icon: {
+                path: window.google.maps.SymbolPath.CIRCLE,
+                scale: 15,
+                fillColor: "#4285F4",
+                fillOpacity: 1,
+                strokeColor: "#FFFFFF",
+                strokeWeight: 3,
+              },
+            });
+
+            baseMarker.addListener("click", () => {
+              routeInfoWindow.setPosition(baseLocation);
+              routeInfoWindow.open(map);
+            });
+
+            // Create individual polylines for each leg with different colors
+            route.legs.forEach((leg, index) => {
+              const legColor = index === 0 ? "#4285F4" : routeColors[(index - 1) % routeColors.length];
+              
+              const legInfoWindow = new window.google.maps.InfoWindow({
+                content: `<div style="padding: 8px; min-width: 150px;">
+                  <div style="display: flex; align-items: center; margin-bottom: 4px;">
+                    <div style="width: 12px; height: 12px; background-color: ${legColor}; border-radius: 50%; margin-right: 8px;"></div>
+                    <strong>Leg ${index + 1}</strong>
+                  </div>
+                  <strong>From:</strong> ${leg.start_address}<br>
+                  <strong>To:</strong> ${leg.end_address}<br>
+                  <strong>Distance:</strong> ${leg.distance?.text}<br>
+                  <strong>Duration:</strong> ${leg.duration?.text}
+                  ${index === 0 ? '<br><strong>Type:</strong> Base route' : ''}
+                </div>`,
+              });
+
+              // Create polyline for this specific leg
+              if (leg.steps && leg.steps.length > 0) {
+                const path: google.maps.LatLng[] = [];
+                
+                // Build path from leg steps
+                leg.steps.forEach((step) => {
+                  if (step.path) {
+                    step.path.forEach((point) => {
+                      path.push(new window.google.maps.LatLng(point.lat(), point.lng()));
+                    });
+                  }
+                });
+
+                if (path.length > 0) {
+                  const polyline = new window.google.maps.Polyline({
+                    path: path,
+                    strokeColor: legColor,
+                    strokeWeight: 6,
+                    strokeOpacity: 0.8,
+                    icons: [
+                      {
+                        icon: {
+                          path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                          scale: 1.5,
+                          fillColor: legColor,
+                          fillOpacity: 0.8,
+                          strokeColor: "#FFFFFF",
+                          strokeWeight: 0.5,
+                        },
+                        offset: "50%",
+                        repeat: "300px",
+                      },
+                    ],
+                    map: map,
+                  });
+
+                  polyline.addListener("click", () => {
+                    const midPoint = path[Math.floor(path.length / 2)];
+                    legInfoWindow.setPosition(midPoint);
+                    legInfoWindow.open(map);
+                  });
+                }
+              }
+            });
+           }
+                 } else {
+           console.error("Directions request failed due to " + status);
+           setRouteInfo(null);
+           
+           // Show user-friendly error message
+           const errorInfoWindow = new window.google.maps.InfoWindow({
+             content: `<div style="padding: 12px; min-width: 200px;">
+               <h3 style="margin: 0 0 8px 0; color: #f44336;">⚠️ Route Calculation Failed</h3>
+               <p style="margin: 4px 0;">Unable to calculate optimized route.</p>
+               <p style="margin: 4px 0; font-size: 12px; color: #666;">
+                 Showing straight-line route as fallback.
+               </p>
+             </div>`,
+           });
+           
+           // Fallback to simple polyline if directions fail
+           const points = [
+             baseLocation,
+             ...ordersWithCoords.map((order) => ({
+               lat: order.customer.latitude,
+               lng: order.customer.longitude,
+             })),
+             baseLocation,
+           ];
+
+           for (let i = 0; i < points.length - 1; i++) {
+             const segmentColor = i === 0 ? "#4285F4" : routeColors[(i - 1) % routeColors.length];
+             const polyline = new window.google.maps.Polyline({
+               path: [points[i], points[i + 1]],
+               geodesic: true,
+               strokeColor: segmentColor,
+               strokeOpacity: 0.8,
+               strokeWeight: 6,
+               icons: [
+                 {
+                                        icon: {
+                       path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                       scale: 1.5,
+                       fillColor: segmentColor,
+                       fillOpacity: 0.8,
+                       strokeColor: "#FFFFFF",
+                       strokeWeight: 0.5,
+                     },
+                   offset: "50%",
+                   repeat: "300px",
+                 },
+               ],
+               map: map,
+             });
+
+             // Add info window for each segment
+             const segmentInfoWindow = new window.google.maps.InfoWindow({
+               content: `<div style="padding: 8px; min-width: 150px;">
+                 <div style="display: flex; align-items: center; margin-bottom: 4px;">
+                   <div style="width: 12px; height: 12px; background-color: ${segmentColor}; border-radius: 50%; margin-right: 8px;"></div>
+                   <strong>Segment ${i + 1}</strong>
+                 </div>
+                 <strong>From:</strong> ${i === 0 ? 'Base Location' : `Customer ${i}`}<br>
+                 <strong>To:</strong> ${i === points.length - 2 ? 'Base Location' : `Customer ${i + 1}`}<br>
+                 <strong>Status:</strong> Fallback route (straight line)
+                 ${i === 0 ? '<br><strong>Type:</strong> Base route' : ''}
+               </div>`,
+             });
+
+             polyline.addListener("click", () => {
+               const midPoint = {
+                 lat: (points[i].lat + points[i + 1].lat) / 2,
+                 lng: (points[i].lng + points[i + 1].lng) / 2,
+               };
+               segmentInfoWindow.setPosition(midPoint);
+               segmentInfoWindow.open(map);
+             });
+           }
+           
+           // Show error message on base marker
+           const baseMarker = new window.google.maps.Marker({
+             position: baseLocation,
+             map: map,
+             title: selectedDriver 
+               ? `Driver Base: ${selectedDriver.name} - Click for error details`
+               : "Base Location (Berlin) - Click for error details",
+             icon: {
+               path: window.google.maps.SymbolPath.CIRCLE,
+               scale: 15,
+               fillColor: "#f44336",
+               fillOpacity: 1,
+               strokeColor: "#FFFFFF",
+               strokeWeight: 3,
+             },
+           });
+
+           baseMarker.addListener("click", () => {
+             errorInfoWindow.setPosition(baseLocation);
+             errorInfoWindow.open(map);
+           });
+         }
+       });
+     } else {
+       setRouteLoading(false);
+     }
   }, [draggableOrder]);
 
   // Initialize map when draggableOrder changes
@@ -321,6 +561,7 @@ const DeliveryRoutes: React.FC = () => {
   // Fetch orders when driver or date changes
   useEffect(() => {
     fetchOrders();
+    setRouteInfo(null); // Clear route info when orders change
   }, [fetchOrders]);
 
   // Format date for display
@@ -338,6 +579,223 @@ const DeliveryRoutes: React.FC = () => {
   );
 
   const allOrders = orders; // Show all orders, not just those with coordinates
+
+  // Generate and download manifest
+  const downloadManifest = useCallback(() => {
+    if (!selectedDriver || !selectedDate || orders.length === 0) return;
+
+    const formatDate = (date: Date) => {
+      return date.toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+    };
+
+    // Create HTML content for PDF
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Delivery Manifest - ${selectedDriver.name} - ${formatDate(selectedDate)}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+            .section { margin-bottom: 20px; }
+            .section h3 { color: #333; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+            .info-row { margin: 5px 0; }
+            .info-label { font-weight: bold; display: inline-block; width: 150px; }
+            .table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+            .table th, .table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            .table th { background-color: #f2f2f2; }
+            .total-row { font-weight: bold; background-color: #f9f9f9; }
+            .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+            .route-info { background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin: 10px 0; }
+            .route-leg { margin: 5px 0; padding: 5px; background-color: #f9f9f9; border-left: 3px solid #007acc; }
+            @media print {
+              body { margin: 0; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>DELIVERY MANIFEST</h1>
+            <h2>${selectedDriver.name} - ${formatDate(selectedDate)}</h2>
+            <p>Generated on: ${new Date().toLocaleString()}</p>
+          </div>
+
+          <div class="section">
+            <h3>Driver Information</h3>
+            <div class="info-row">
+              <span class="info-label">Driver Name:</span>
+              <span>${selectedDriver.name}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Driver Number:</span>
+              <span>${selectedDriver.driverNumber}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Date:</span>
+              <span>${formatDate(selectedDate)}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Base Location:</span>
+              <span>${selectedDriver.latitude && selectedDriver.longitude 
+                ? `${selectedDriver.latitude.toFixed(4)}, ${selectedDriver.longitude.toFixed(4)}`
+                : 'Berlin (Default)'}</span>
+            </div>
+          </div>
+
+          <div class="section">
+            <h3>Route Summary</h3>
+            <div class="route-info">
+              <div class="info-row">
+                <span class="info-label">Total Orders:</span>
+                <span>${orders.length}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Orders with Coordinates:</span>
+                <span>${routePoints.length}</span>
+              </div>
+              ${routeInfo ? `
+              <div class="info-row">
+                <span class="info-label">Total Distance:</span>
+                <span>${(routeInfo.totalDistance / 1000).toFixed(1)} km</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Total Duration:</span>
+                <span>${Math.round(routeInfo.totalDuration / 60)} minutes</span>
+              </div>
+              ` : ''}
+            </div>
+          </div>
+
+          ${routeInfo ? `
+          <div class="section">
+            <h3>Route Details</h3>
+            ${routeInfo.legs.map((leg, index) => `
+              <div class="route-leg">
+                <strong>${index + 1}. ${leg.startAddress} → ${leg.endAddress}</strong><br>
+                Distance: ${leg.distance} | Duration: ${leg.duration}
+              </div>
+            `).join('')}
+          </div>
+          ` : ''}
+
+          <div class="section">
+            <h3>Delivery Sequence</h3>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Seq</th>
+                  <th>Order #</th>
+                  <th>Customer Name</th>
+                  <th>Address</th>
+                  <th>Mobile</th>
+                  <th>Email</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${draggableOrder.map((order, index) => {
+                  const customer = order.customer;
+                  const address = `${customer.street} ${customer.houseNumber}, ${customer.postalCode} ${customer.city}`;
+                  const mobile = customer.mobileNumber || 'N/A';
+                  const email = customer.email || 'N/A';
+                  const amount = order.totalGrossAmount ? `€${order.totalGrossAmount.toFixed(2)}` : 'N/A';
+                  const status = order.status || 'N/A';
+                  const paymentMethod = order.paymentMethod ? ` (${order.paymentMethod.replace('_', ' ').toUpperCase()})` : '';
+
+                  return `
+                    <tr>
+                      <td>${index + 1}</td>
+                      <td>${order.orderNumber}</td>
+                      <td>${customer.name}</td>
+                      <td>${address}</td>
+                      <td>${mobile}</td>
+                      <td>${email}</td>
+                      <td>${amount}${paymentMethod}</td>
+                      <td>${status}</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          ${(() => {
+            const ordersWithNotes = draggableOrder.filter(order => order.driverNote);
+            if (ordersWithNotes.length > 0) {
+              return `
+                <div class="section">
+                  <h3>Driver Notes</h3>
+                  ${ordersWithNotes.map((order, index) => `
+                    <div class="route-leg">
+                      <strong>${order.orderNumber} - ${order.customer.name}</strong><br>
+                      ${order.driverNote}
+                    </div>
+                  `).join('')}
+                </div>
+              `;
+            }
+            return '';
+          })()}
+
+          ${(() => {
+            const ordersWithoutCoords = orders.filter(order => 
+              !order.customer.latitude || !order.customer.longitude
+            );
+            
+            if (ordersWithoutCoords.length > 0) {
+              return `
+                <div class="section">
+                  <h3>Orders Without Coordinates (Not in Route)</h3>
+                    ${ordersWithoutCoords.map((order, index) => {
+                     const customer = order.customer;
+                     const address = `${customer.street} ${customer.houseNumber}, ${customer.postalCode} ${customer.city}`;
+                     const mobile = customer.mobileNumber || 'N/A';
+                     const email = customer.email || 'N/A';
+                     const amount = order.totalGrossAmount ? `€${order.totalGrossAmount.toFixed(2)}` : 'N/A';
+                     const status = order.status || 'N/A';
+                     const paymentMethod = order.paymentMethod ? ` (${order.paymentMethod.replace('_', ' ').toUpperCase()})` : '';
+
+                     return `
+                       <div class="route-leg">
+                         <strong>${index + 1}. Order #${order.orderNumber} - ${customer.name}</strong><br>
+                         Address: ${address}<br>
+                         Mobile: ${mobile} | Email: ${email}<br>
+                         Amount: ${amount}${paymentMethod} | Status: ${status}
+                         ${order.driverNote ? `<br><strong>Note:</strong> ${order.driverNote}` : ''}
+                       </div>
+                     `;
+                   }).join('')}
+                </div>
+              `;
+            }
+            return '';
+          })()}
+
+          <div class="footer">
+            <p>This manifest was generated automatically from the delivery route planning system.</p>
+            <p>Total Orders: ${orders.length}</p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    // Open in new window and trigger print
+    const printWindow = window.open("", "_blank");
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.focus();
+      printWindow.print();
+      printWindow.close();
+    }
+  }, [selectedDriver, selectedDate, orders, draggableOrder, routeInfo, routePoints]);
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
@@ -399,6 +857,18 @@ const DeliveryRoutes: React.FC = () => {
               </Typography>
             </Box>
           </Box>
+          {selectedDriver && selectedDate && orders.length > 0 && (
+            <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+              <Button
+                variant="outlined"
+                startIcon={<DownloadIcon />}
+                onClick={downloadManifest}
+                size="small"
+              >
+                Download Manifest
+              </Button>
+            </Box>
+          )}
         </Paper>
 
         {/* Main Content */}
@@ -412,8 +882,64 @@ const DeliveryRoutes: React.FC = () => {
                   {routePoints.length} with coordinates)
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Starting from Berlin base location
+                  Starting from {selectedDriver?.name ? `${selectedDriver.name}'s location` : 'Berlin base location'}
                 </Typography>
+                {routeLoading && (
+                  <Box sx={{ mt: 2, p: 2, display: "flex", alignItems: "center", gap: 1 }}>
+                    <CircularProgress size={16} />
+                    <Typography variant="body2" color="text.secondary">
+                      Calculating optimized route...
+                    </Typography>
+                  </Box>
+                )}
+                {routeInfo && !routeLoading && (
+                  <Box sx={{ mt: 2, p: 2, bgcolor: "primary.50", borderRadius: 1 }}>
+                    <Typography variant="subtitle2" color="primary" gutterBottom>
+                      🚗 Optimized Route Information
+                    </Typography>
+                    <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", mb: 2 }}>
+                      <Typography variant="body2">
+                        <strong>Total Distance:</strong> {(routeInfo.totalDistance / 1000).toFixed(1)} km
+                      </Typography>
+                      <Typography variant="body2">
+                        <strong>Total Duration:</strong> {Math.round(routeInfo.totalDuration / 60)} minutes
+                      </Typography>
+                      <Typography variant="body2">
+                        <strong>Stops:</strong> {routeInfo.legs.length - 1}
+                      </Typography>
+                    </Box>
+                    
+                    {/* Route Color Legend */}
+                    <Box sx={{ mt: 2 }}>
+                      <Typography variant="caption" color="text.secondary" gutterBottom>
+                        Route Segments:
+                      </Typography>
+                      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mt: 1 }}>
+                        {routeInfo.legs.slice(0, 6).map((leg, index) => (
+                          <Box key={index} sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                            <Box
+                              sx={{
+                                width: 12,
+                                height: 12,
+                                borderRadius: "50%",
+                                backgroundColor: index === 0 ? "#4285F4" : routeColors[(index - 1) % routeColors.length],
+                                border: "1px solid #ccc",
+                              }}
+                            />
+                            <Typography variant="caption">
+                              {index === 0 ? "Base" : `Stop ${index}`} → {index === routeInfo.legs.length - 1 ? "Base" : `Stop ${index + 1}`}
+                            </Typography>
+                          </Box>
+                        ))}
+                        {routeInfo.legs.length > 6 && (
+                          <Typography variant="caption" color="text.secondary">
+                            +{routeInfo.legs.length - 6} more segments
+                          </Typography>
+                        )}
+                      </Box>
+                    </Box>
+                  </Box>
+                )}
               </Box>
 
               {loading ? (
@@ -598,6 +1124,16 @@ const DeliveryRoutes: React.FC = () => {
                     ? "No customer locations available for route planning"
                     : "Click on markers or customers to view details"}
                 </Typography>
+                {routeInfo && (
+                  <Typography variant="body2" color="primary" sx={{ mt: 1 }}>
+                    🛣️ Showing optimized road routes with real-time traffic data
+                  </Typography>
+                )}
+                {!routeInfo && routePoints.length > 0 && !routeLoading && (
+                  <Typography variant="body2" color="warning.main" sx={{ mt: 1 }}>
+                    ⚠️ Using fallback route calculation (straight lines)
+                  </Typography>
+                )}
                 {routePoints.length === 0 && allOrders.length > 0 && (
                   <Typography
                     variant="caption"
